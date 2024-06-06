@@ -31,12 +31,21 @@ def generate_launch_description():
             {"obstacle": obstacle_},{"degrees": degrees_},{"final_approach": final_approach_},]
     )
 
+    static_tf_pub = Node(
+        package='tf2_ros',
+        executable='static_transform_publisher',
+        name='static_transform_publisher_robot_odom',
+        output='screen',
+        emulate_tty=True,
+        arguments=['0', '0', '0', '0', '0', '0', 'world', 'robot_odom'])
+
     # create and return launch description object
     return LaunchDescription(
         [
             obstacle_arg,
             degrees_arg,
             final_approach_arg,
+            static_tf_pub,
             pre_approach_node
         ]
     )
