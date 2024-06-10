@@ -1,4 +1,5 @@
 #include "custom_interfaces/srv/detail/go_to_loading__struct.h"
+#include "custom_interfaces/srv/go_to_loading.hpp"
 #include "geometry_msgs/msg/pose2_d.hpp"
 #include "geometry_msgs/msg/twist.hpp"
 #include "nav_msgs/msg/detail/odometry__struct.hpp"
@@ -7,18 +8,20 @@
 #include "rclcpp/subscription.hpp"
 #include "sensor_msgs/msg/detail/laser_scan__struct.hpp"
 #include "sensor_msgs/msg/laser_scan.hpp"
+#include "std_msgs/msg/detail/empty__struct.hpp"
 #include "std_msgs/msg/int32.hpp"
-#include <chrono>
-
-#include "custom_interfaces/srv/go_to_loading.hpp"
 #include "tf2_ros/static_transform_broadcaster.h"
+#include "tf2_ros/transform_listener.h"
+#include <chrono>
 #include <cmath>
 #include <geometry_msgs/msg/quaternion.hpp>
 #include <geometry_msgs/msg/transform_stamped.hpp>
+#include <std_msgs/msg/empty.hpp>
 #include <string>
 #include <tf2/LinearMath/Matrix3x3.h>
 #include <tf2/LinearMath/Quaternion.h>
 #include <tf2_geometry_msgs/tf2_geometry_msgs.h>
+#include <tf2_ros/buffer.h>
 
 using namespace std::chrono_literals;
 using GoToLoadingServiceMessage = custom_interfaces::srv::GoToLoading;
@@ -95,8 +98,7 @@ private:
   sensor_msgs::msg::LaserScan last_laser_;
   nav_msgs::msg::Odometry odom_value_;
 
-  geometry_msgs::msg::Pose2D desired_pos_;
-  geometry_msgs::msg::Pose2D current_pos_;
+  // geometry_msgs::msg::Pose2D current_pos_;
   geometry_msgs::msg::Twist velocity = geometry_msgs::msg::Twist();
 
   rclcpp::CallbackGroup::SharedPtr callback_group_1;
@@ -120,6 +122,17 @@ private:
   float error_angle_ = 4.0;
   float kp_ = 0.75;
 
+  double quaternion2Euler(geometry_msgs::msg::Quaternion quaternion_) {
+
+    double roll, pitch, yaw;
+
+    tf2::Quaternion tf_quaternion;
+    tf2::fromMsg(quaternion_, tf_quaternion);
+    tf2::Matrix3x3(tf_quaternion).getRPY(roll, pitch, yaw);
+
+    return yaw;
+  }
+
   void cb_laserScan(const sensor_msgs::msg::LaserScan::SharedPtr msg) {
 
     this->last_laser_ = *msg;
@@ -129,19 +142,12 @@ private:
 
     geometry_msgs::msg::Quaternion quaternion_;
 
-    double roll, pitch, yaw;
-
-    // Quaterion 2 Euler
-    quaternion_ = msg->pose.pose.orientation;
-
-    tf2::Quaternion tf_quaternion;
-    tf2::fromMsg(quaternion_, tf_quaternion);
-    tf2::Matrix3x3(tf_quaternion).getRPY(roll, pitch, yaw);
-
-    this->current_angle_ = yaw;
+    this->current_angle_ = quaternion2Euler(msg->pose.pose.orientation);
   }
 
   void publish_velocity() {
+
+    geometry_msgs::msg::Quaternion quaternion_;
 
     this->get_parameter("obstacle", obstacle_);
     this->get_parameter("degrees", degrees_);
@@ -152,7 +158,7 @@ private:
     } else if (this->last_laser_.ranges[540] < obstacle_ &&
                direction_ == "Forward") {
       direction_ = "Turn";
-    } else if (abs(error_angle_) < 0.1 && direction_ == "Turn") {
+    } else if (abs(error_angle_) < 0.075 && direction_ == "Turn") {
       direction_ = "Stop";
     }
 
@@ -181,6 +187,7 @@ private:
       if (service_on_ == false) {
         this->call_attach_to_shelf_service(final_approach_);
         service_on_ = true;
+        direction_ = "Go to Docking";
       }
     }
 
@@ -256,6 +263,18 @@ public:
     this->tf_static_broadcaster_ =
         std::make_shared<tf2_ros::StaticTransformBroadcaster>(this);
 
+    publisher_ =
+        this->create_publisher<geometry_msgs::msg::Twist>("/robot/cmd_vel", 10);
+
+    publisher_elevator_up =
+        this->create_publisher<std_msgs::msg::Empty>("/elevator_up", 10);
+
+    publisher_elevator_down =
+        this->create_publisher<std_msgs::msg::Empty>("/elevator_down", 10);
+
+    tf_buffer_ = std::make_unique<tf2_ros::Buffer>(this->get_clock());
+    tf_listener_ = std::make_shared<tf2_ros::TransformListener>(*tf_buffer_);
+
     RCLCPP_INFO(this->get_logger(), "Approach_service_server_node is up!");
   }
 
@@ -263,12 +282,19 @@ private:
   rclcpp::Service<GoToLoadingServiceMessage>::SharedPtr go_to_loading_server_;
   rclcpp::Subscription<sensor_msgs::msg::LaserScan>::SharedPtr sub_laserScan_;
   rclcpp::Subscription<nav_msgs::msg::Odometry>::SharedPtr sub_robot_odom_;
+  rclcpp::Publisher<geometry_msgs::msg::Twist>::SharedPtr publisher_;
+  rclcpp::Publisher<std_msgs::msg::Empty>::SharedPtr publisher_elevator_up;
+  rclcpp::Publisher<std_msgs::msg::Empty>::SharedPtr publisher_elevator_down;
   sensor_msgs::msg::LaserScan last_laser_;
   std::shared_ptr<tf2_ros::StaticTransformBroadcaster> tf_static_broadcaster_;
   rclcpp::CallbackGroup::SharedPtr callback_group_1;
   rclcpp::CallbackGroup::SharedPtr callback_group_2;
 
+  std::shared_ptr<tf2_ros::TransformListener> tf_listener_{nullptr};
+  std::shared_ptr<tf2_ros::Buffer> tf_buffer_;
+
   nav_msgs::msg::Odometry current_robot_pos;
+  geometry_msgs::msg::TransformStamped desired_pos_;
 
   float angle_degrees_1 = 0.0;
   float angle_degrees_2 = 0.0;
@@ -276,9 +302,57 @@ private:
   float frame_pos_x = 0.0;
   float frame_pos_y = 0.0;
 
+  rclcpp::TimerBase::SharedPtr timer_;
+
   void cb_odom(const nav_msgs::msg::Odometry::SharedPtr msg) {
 
     this->current_robot_pos = *msg;
+  }
+
+  // Get transformation between parent_frame and child_frame
+  geometry_msgs::msg::TransformStamped
+  get_model_pose_from_tf(const std::string &parent_frame,
+                         const std::string &child_frame) {
+
+    geometry_msgs::msg::TransformStamped ts_;
+
+    ts_.transform.translation.x = 0.0;
+    ts_.transform.translation.y = 0.0;
+    ts_.transform.translation.z = 0.0;
+    ts_.transform.rotation.x = 0.0;
+    ts_.transform.rotation.y = 0.0;
+    ts_.transform.rotation.z = 0.0;
+    ts_.transform.rotation.w = 0.0;
+
+    // Look up for the transformation between parent_frame and child_frame
+    try {
+      ts_ = tf_buffer_->lookupTransform(parent_frame, child_frame,
+                                        tf2::TimePointZero);
+    } catch (const tf2::TransformException &ex) {
+      RCLCPP_INFO(this->get_logger(), "Could not transform %s to %s: %s",
+                  parent_frame.c_str(), child_frame.c_str(), ex.what());
+      return ts_;
+    }
+
+    return ts_;
+  }
+
+  void get_desired_pos() {
+
+    this->desired_pos_ =
+        this->get_model_pose_from_tf("robot_base_link", "cart_frame");
+  }
+
+  void wait_for_seconds(int sec) {
+
+    int i = 0;
+
+    rclcpp::Rate rate_(10);
+
+    while (i < 10 * sec) {
+      i = i + 1;
+      rate_.sleep();
+    }
   }
 
   void cd_GoToLoading(
@@ -287,27 +361,114 @@ private:
 
     int cant_values = 0;
 
+    float desired_x_ = 0.0;
+    float desired_y_ = 0.0;
+
+    float threshold_position = 0.075;
+    float threshold_orientation = 0.02;
+
+    float kp_yaw = 0.75;
+    float kp_distance = 0.75;
+
+    float speed_approach_docking = 0.5;
+    float distance_to_docking = 0.3;
+
+    float error_distance_ = 0.0;
+    float error_angle_ = 4.0;
+
+    bool flag_approach_ = false;
+
+    auto start_time = this->now();
+
+    double time_to_move = distance_to_docking / speed_approach_docking;
+
+    std::string direction_ = "GoToCartFrame";
+
+    geometry_msgs::msg::Twist velocity = geometry_msgs::msg::Twist();
+
+    std_msgs::msg::Empty Empty_msg;
+
     cant_values = this->get_intensities_values();
 
-    std::cout << "Value requested: " << request->attach_to_shelf;
-    std::cout << std::endl;
-    std::cout << "Value angle1: " << this->angle_degrees_1;
-    std::cout << std::endl;
-    std::cout << "Value angle2: " << this->angle_degrees_2;
-    std::cout << std::endl;
-
-    this->get_frame_position();
-    this->publish_cart_frame();
-
     if (cant_values == 2) {
-      std::cout << std::endl;
-      std::cout << "True";
-      std::cout << std::endl;
-      response->complete = true;
+
+      this->get_frame_position();
+      this->publish_cart_frame();
+
+      wait_for_seconds(1);
+
+      if (request->attach_to_shelf == true) {
+
+        rclcpp::Rate rate(10);
+
+        while (direction_ != "Done") {
+
+          if (direction_ == "GoToCartFrame") {
+
+            this->get_desired_pos();
+            desired_x_ = this->desired_pos_.transform.translation.x;
+            desired_y_ = this->desired_pos_.transform.translation.y;
+
+            error_distance_ =
+                sqrt(desired_x_ * desired_x_ + desired_y_ * desired_y_);
+            error_angle_ = std::atan2(desired_y_, desired_x_);
+
+            if (error_angle_ < -M_PI) {
+              error_angle_ += 2 * M_PI;
+            } else if (error_angle_ > M_PI) {
+              error_angle_ -= 2 * M_PI;
+            }
+
+            if (abs(error_distance_) > threshold_position) {
+
+              if (abs(error_angle_) < threshold_orientation) {
+
+                velocity.linear.x = kp_distance * abs(error_distance_);
+                velocity.angular.z = 0.0;
+
+              } else {
+                velocity.linear.x = kp_distance * abs(error_distance_);
+                velocity.angular.z = kp_yaw * error_angle_;
+              }
+
+            } else {
+
+              velocity.linear.x = 0.0;
+              velocity.angular.z = 0.0;
+              direction_ = "Approached";
+            }
+
+          } else if (direction_ == "Approached") {
+
+            if (flag_approach_ == false) {
+              start_time = this->now();
+              flag_approach_ = true;
+            }
+
+            if ((this->now() - start_time).seconds() < time_to_move) {
+              velocity.linear.x = speed_approach_docking;
+              velocity.angular.z = 0.0;
+            } else {
+
+              velocity.linear.x = 0.0;
+              velocity.angular.z = 0.0;
+              direction_ = "Elevator Up";
+            }
+          } else if (direction_ == "Elevator Up") {
+
+            publisher_elevator_up->publish(Empty_msg);
+            direction_ = "Done";
+          }
+
+          publisher_->publish(velocity);
+          rate.sleep();
+        }
+        response->complete = true;
+      } else {
+        response->complete = false;
+      }
+
     } else {
-      std::cout << std::endl;
-      std::cout << "CANT VALUE FOUNDED:" << cant_values;
-      std::cout << std::endl;
       response->complete = false;
     }
   }
@@ -350,6 +511,24 @@ private:
   }
 
   void get_frame_position() {
+
+    /*
+
+        Gets the position [x,y] of cart_frame.
+        These coordinates are relative to the robot
+        For x coordinate I use the average between the beams founded in
+       get_intensities_values()
+
+
+        O       |_       O
+         |              |
+           |          |
+             |      |
+               |  |
+               Robot
+
+    */
+
     float laser1 = 0.0;
     float laser2 = 0.0;
     float laser1_range = 0.0;
@@ -359,25 +538,33 @@ private:
     float laser2_dist_to_zero_angle = 0.0;
 
     float frame_coordX = 0.0;
+    float frame_coordX_laser1 = 0.0;
+    float frame_coordX_laser2 = 0.0;
     float frame_coordY = 0.0;
 
-    laser1 = 4 * angle_degrees_1 + 540;
-    laser2 = 4 * angle_degrees_2 + 540;
+    laser1 = 4 * this->angle_degrees_1 + 540;
+    laser2 = 4 * this->angle_degrees_2 + 540;
 
     laser1_range = this->last_laser_.ranges[laser1];
     laser2_range = this->last_laser_.ranges[laser2];
 
     laser1_dist_to_zero_angle =
-        std::sin((this->angle_degrees_1 * (180 / M_PI)) * laser1_range);
+        std::sin((this->angle_degrees_1 * (M_PI / 180)) * laser1_range);
     laser2_dist_to_zero_angle =
-        std::sin((this->angle_degrees_2 * (180 / M_PI)) * laser2_range);
+        std::sin((this->angle_degrees_2 * (M_PI / 180)) * laser2_range);
 
-    frame_coordX = (laser1_range + laser2_range) / 2;
-    frame_coordY = (laser1_dist_to_zero_angle + laser2_dist_to_zero_angle) / 2;
+    frame_coordX_laser1 =
+        abs(std::cos((this->angle_degrees_1 * (M_PI / 180)) * laser1_range));
+    frame_coordX_laser2 =
+        abs(std::cos((this->angle_degrees_2 * (M_PI / 180)) * laser2_range));
 
-    std::cout << "La coord [x,y] del frame del docking point es:"
-              << frame_coordX << "," << frame_coordY;
-    std::cout << std::endl;
+    if (frame_coordX_laser1 > frame_coordX_laser2) {
+      frame_coordX = frame_coordX_laser1;
+    } else {
+      frame_coordX = frame_coordX_laser2;
+    }
+
+    frame_coordY = -(laser1_dist_to_zero_angle + laser2_dist_to_zero_angle) / 2;
 
     this->frame_pos_x = frame_coordX;
     this->frame_pos_y = frame_coordY;
@@ -415,10 +602,11 @@ private:
                                 this->frame_pos_x * std::sin(robot_yaw) +
                                 this->frame_pos_y * std::cos(robot_yaw);
     t.transform.translation.z = 0.0;
-    t.transform.rotation.x = 1.0;
+
+    t.transform.rotation.x = 0.0;
     t.transform.rotation.y = 0.0;
-    t.transform.rotation.z = 0.0;
-    t.transform.rotation.w = 0.0;
+    t.transform.rotation.z = -0.7071;
+    t.transform.rotation.w = 0.7071;
 
     tf_static_broadcaster_->sendTransform(t);
   }
@@ -433,7 +621,6 @@ int main(int argc, char *argv[]) {
       std::make_shared<Approach_service_server>();
 
   // Multithread
-
   rclcpp::executors::MultiThreadedExecutor executor;
 
   executor.add_node(PreApproach_node);
@@ -441,17 +628,6 @@ int main(int argc, char *argv[]) {
 
   executor.spin();
 
-  // 2 Single Thread
-  /*
-  rclcpp::executors::StaticSingleThreadedExecutor executor;
-  rclcpp::executors::StaticSingleThreadedExecutor executor2;
-
-  executor.add_node(PreApproach_node);
-  executor2.add_node(PreApproach_v2_node);
-
-  executor.spin();
-  executor2.spin();
-  */
   rclcpp::shutdown();
   return 0;
 }

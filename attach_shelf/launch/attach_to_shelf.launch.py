@@ -1,11 +1,14 @@
-from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument
-from launch.substitutions import LaunchConfiguration
+import os
 import launch
-from launch_ros.actions import Node
-
+from launch_ros.actions          import Node
+from launch                      import LaunchDescription
+from launch.substitutions        import LaunchConfiguration
+from launch.actions              import DeclareLaunchArgument
+from ament_index_python.packages import get_package_prefix,get_package_share_directory
 
 def generate_launch_description():
+
+    package_description = "attach_shelf"
 
     obstacle_arg = DeclareLaunchArgument(
         "obstacle", default_value="0.5"
@@ -39,6 +42,17 @@ def generate_launch_description():
         emulate_tty=True,
         arguments=['0', '0', '0', '0', '0', '0', 'world', 'robot_odom'])
 
+    # RVIZ Configuration
+    rviz_config_dir = os.path.join(get_package_share_directory(package_description), "config", 'rviz_config.rviz')
+
+    rviz_node = Node(
+            package='rviz2',
+            executable='rviz2',
+            output='screen',
+            name='rviz_node',
+            parameters=[{'use_sim_time': True}],
+            arguments=['-d', rviz_config_dir])
+
     # create and return launch description object
     return LaunchDescription(
         [
@@ -46,6 +60,7 @@ def generate_launch_description():
             degrees_arg,
             final_approach_arg,
             static_tf_pub,
-            pre_approach_node
+            pre_approach_node,
+            rviz_node
         ]
     )
