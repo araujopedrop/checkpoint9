@@ -282,19 +282,22 @@ private:
   rclcpp::Service<GoToLoadingServiceMessage>::SharedPtr go_to_loading_server_;
   rclcpp::Subscription<sensor_msgs::msg::LaserScan>::SharedPtr sub_laserScan_;
   rclcpp::Subscription<nav_msgs::msg::Odometry>::SharedPtr sub_robot_odom_;
+
   rclcpp::Publisher<geometry_msgs::msg::Twist>::SharedPtr publisher_;
   rclcpp::Publisher<std_msgs::msg::Empty>::SharedPtr publisher_elevator_up;
   rclcpp::Publisher<std_msgs::msg::Empty>::SharedPtr publisher_elevator_down;
-  sensor_msgs::msg::LaserScan last_laser_;
-  std::shared_ptr<tf2_ros::StaticTransformBroadcaster> tf_static_broadcaster_;
+
   rclcpp::CallbackGroup::SharedPtr callback_group_1;
   rclcpp::CallbackGroup::SharedPtr callback_group_2;
 
+  std::shared_ptr<tf2_ros::StaticTransformBroadcaster> tf_static_broadcaster_;
   std::shared_ptr<tf2_ros::TransformListener> tf_listener_{nullptr};
   std::shared_ptr<tf2_ros::Buffer> tf_buffer_;
 
   nav_msgs::msg::Odometry current_robot_pos;
+  sensor_msgs::msg::LaserScan last_laser_;
   geometry_msgs::msg::TransformStamped desired_pos_;
+  geometry_msgs::msg::TransformStamped dif_pos_scan_base_link;
 
   float angle_degrees_1 = 0.0;
   float angle_degrees_2 = 0.0;
@@ -456,6 +459,7 @@ private:
             }
           } else if (direction_ == "Elevator Up") {
 
+            wait_for_seconds(1);
             publisher_elevator_up->publish(Empty_msg);
             direction_ = "Done";
           }
@@ -558,15 +562,14 @@ private:
     frame_coordX_laser2 =
         abs(std::cos((this->angle_degrees_2 * (M_PI / 180)) * laser2_range));
 
-    if (frame_coordX_laser1 > frame_coordX_laser2) {
-      frame_coordX = frame_coordX_laser1;
-    } else {
-      frame_coordX = frame_coordX_laser2;
-    }
+    this->dif_pos_scan_base_link = this->get_model_pose_from_tf(
+        "robot_base_link", "robot_front_laser_link");
 
+    frame_coordX = (frame_coordX_laser1 + frame_coordX_laser2) / 2;
     frame_coordY = -(laser1_dist_to_zero_angle + laser2_dist_to_zero_angle) / 2;
 
-    this->frame_pos_x = frame_coordX;
+    this->frame_pos_x =
+        frame_coordX + dif_pos_scan_base_link.transform.translation.x;
     this->frame_pos_y = frame_coordY;
   }
 
