@@ -35,7 +35,40 @@ include_directories(include)
 
 add_library(PreApproach SHARED src/preApproach_component.cpp)
 target_compile_definitions(PreApproach PRIVATE "COMPOSITION_BUILDING_DLL")
+
+add_library(AttachServer SHARED src/attachServer_component.cpp)
+target_compile_definitions(AttachServer PRIVATE "COMPOSITION_BUILDING_DLL")
+
+add_library(AttachClient SHARED src/attachClient_component.cpp)
+target_compile_definitions(AttachClient PRIVATE "COMPOSITION_BUILDING_DLL")
+
 ament_target_dependencies(PreApproach
+  "rclcpp"
+  "rclcpp_components"
+  "geometry_msgs"
+  "std_msgs"
+  "nav_msgs"
+  "sensor_msgs"
+  "tf2"
+  "tf2_ros"
+  "tf2_geometry_msgs"
+  "custom_interfaces"
+  )
+
+ament_target_dependencies(AttachServer
+  "rclcpp"
+  "rclcpp_components"
+  "geometry_msgs"
+  "std_msgs"
+  "nav_msgs"
+  "sensor_msgs"
+  "tf2"
+  "tf2_ros"
+  "tf2_geometry_msgs"
+  "custom_interfaces"
+  )
+
+ament_target_dependencies(AttachClient
   "rclcpp"
   "rclcpp_components"
   "geometry_msgs"
@@ -51,11 +84,32 @@ ament_target_dependencies(PreApproach
 rclcpp_components_register_nodes(PreApproach "my_components::PreApproach")
 set(node_plugins "${node_plugins}my_components::PreApproach;$<TARGET_FILE:PreApproach>\n")
 
+rclcpp_components_register_nodes(AttachServer "my_components::AttachServer")
+set(node_plugins "${node_plugins}my_components::AttachServer;$<TARGET_FILE:AttachServer>\n")
+
+rclcpp_components_register_nodes(AttachClient "my_components::AttachClient")
+set(node_plugins "${node_plugins}my_components::AttachClient;$<TARGET_FILE:AttachClient>\n")
+
 install(TARGETS
   PreApproach
+  AttachServer
+  AttachClient
   ARCHIVE DESTINATION lib
   LIBRARY DESTINATION lib
   RUNTIME DESTINATION bin)
+
+
+add_executable(manual_composition
+  src/manual_composition.cpp)
+target_link_libraries(manual_composition
+  AttachServer
+)
+ament_target_dependencies(manual_composition
+  "rclcpp")
+
+install(TARGETS
+  manual_composition
+  DESTINATION lib/${PROJECT_NAME})
 
 # Install launch files.
 install(DIRECTORY

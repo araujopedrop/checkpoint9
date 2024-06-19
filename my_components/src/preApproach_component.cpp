@@ -43,8 +43,8 @@ PreApproach::PreApproach(const rclcpp::NodeOptions &options)
   // ******************************** Parameters setting
   // ********************************
 
-  this->obstacle_ = 0.3;
-  this->degrees_ = -90;
+  this->obstacle_ = 0.45;
+  this->degrees_ = -95;
 
   RCLCPP_INFO(this->get_logger(), "preApproach_node is up!");
 }
