@@ -7,6 +7,7 @@
 
 #include "geometry_msgs/msg/twist.hpp"
 #include "rclcpp/rclcpp.hpp"
+#include "std_msgs/msg/detail/string__struct.hpp"
 #include "std_msgs/msg/string.hpp"
 
 #include "custom_interfaces/srv/detail/go_to_loading__struct.h"
@@ -70,14 +71,14 @@ AttachServer::AttachServer(const rclcpp::NodeOptions &options)
   this->tf_static_broadcaster_ =
       std::make_shared<tf2_ros::StaticTransformBroadcaster>(this);
 
-  publisher_ =
-      this->create_publisher<geometry_msgs::msg::Twist>("/diffbot_base_controller/cmd_vel_unstamped", 10);
+  publisher_ = this->create_publisher<geometry_msgs::msg::Twist>(
+      "/diffbot_base_controller/cmd_vel_unstamped", 10);
 
   publisher_elevator_up =
-      this->create_publisher<std_msgs::msg::Empty>("/elevator_up", 10);
+      this->create_publisher<std_msgs::msg::String>("/elevator_up", 10);
 
   publisher_elevator_down =
-      this->create_publisher<std_msgs::msg::Empty>("/elevator_down", 10);
+      this->create_publisher<std_msgs::msg::String>("/elevator_down", 10);
 
   tf_buffer_ = std::make_unique<tf2_ros::Buffer>(this->get_clock());
   tf_listener_ = std::make_shared<tf2_ros::TransformListener>(*tf_buffer_);
@@ -167,7 +168,9 @@ void AttachServer::cd_GoToLoading(
 
   geometry_msgs::msg::Twist velocity = geometry_msgs::msg::Twist();
 
-  std_msgs::msg::Empty Empty_msg;
+  auto Empty_msg = std_msgs::msg::String();
+
+  Empty_msg.data = "";
 
   cant_values = this->get_intensities_values();
 
@@ -341,8 +344,8 @@ void AttachServer::get_frame_position() {
   frame_coordX_laser2 =
       abs(std::cos((this->angle_degrees_2 * (M_PI / 180)) * laser2_range));
 
-  this->dif_pos_scan_base_link =
-      this->get_model_pose_from_tf("robot_base_link", "robot_front_laser_base_link");
+  this->dif_pos_scan_base_link = this->get_model_pose_from_tf(
+      "robot_base_link", "robot_front_laser_base_link");
 
   frame_coordX = (frame_coordX_laser1 + frame_coordX_laser2) / 2;
   frame_coordY = -(laser1_dist_to_zero_angle + laser2_dist_to_zero_angle) / 2;

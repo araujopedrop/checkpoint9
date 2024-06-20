@@ -4,7 +4,7 @@
 #include "geometry_msgs/msg/twist.hpp"
 #include "my_components/visibility_control.h"
 #include "rclcpp/rclcpp.hpp"
-
+#include "std_msgs/msg/string.hpp"
 #include "custom_interfaces/srv/detail/go_to_loading__struct.h"
 #include "custom_interfaces/srv/go_to_loading.hpp"
 #include "geometry_msgs/msg/pose2_d.hpp"
@@ -15,13 +15,13 @@
 #include "rclcpp/subscription.hpp"
 #include "sensor_msgs/msg/detail/laser_scan__struct.hpp"
 #include "sensor_msgs/msg/laser_scan.hpp"
+#include "std_msgs/msg/detail/string__struct.hpp"
 #include "std_msgs/msg/int32.hpp"
 #include <chrono>
 #include <geometry_msgs/msg/quaternion.hpp>
 #include <std_msgs/msg/empty.hpp>
 #include <tf2/LinearMath/Matrix3x3.h>
 #include <tf2/LinearMath/Quaternion.h>
-//#include <tf2_geometry_msgs/tf2_geometry_msgs.h>
 #include <tf2_geometry_msgs/tf2_geometry_msgs.hpp>
 #include "tf2_ros/static_transform_broadcaster.h"
 #include "tf2_ros/transform_listener.h"
@@ -60,8 +60,8 @@ private:
   rclcpp::Subscription<nav_msgs::msg::Odometry>::SharedPtr sub_robot_odom_;
 
   rclcpp::Publisher<geometry_msgs::msg::Twist>::SharedPtr publisher_;
-  rclcpp::Publisher<std_msgs::msg::Empty>::SharedPtr publisher_elevator_up;
-  rclcpp::Publisher<std_msgs::msg::Empty>::SharedPtr publisher_elevator_down;
+  rclcpp::Publisher<std_msgs::msg::String>::SharedPtr publisher_elevator_up;
+  rclcpp::Publisher<std_msgs::msg::String>::SharedPtr publisher_elevator_down;
 
   rclcpp::CallbackGroup::SharedPtr callback_group_1;
   rclcpp::CallbackGroup::SharedPtr callback_group_2;
