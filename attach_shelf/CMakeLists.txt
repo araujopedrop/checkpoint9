@@ -15,6 +15,7 @@ find_package(geometry_msgs REQUIRED)
 find_package(tf2 REQUIRED)
 find_package(tf2_ros REQUIRED)
 find_package(tf2_geometry_msgs REQUIRED)
+find_package(custom_interfaces REQUIRED)
 
 
 
@@ -30,15 +31,20 @@ if(BUILD_TESTING)
 endif()
 
 add_executable(pre_approach_node src/pre_approach.cpp)
-ament_target_dependencies(pre_approach_node rclcpp std_msgs nav_msgs sensor_msgs geometry_msgs tf2 tf2_ros tf2_geometry_msgs)
+ament_target_dependencies(pre_approach_node rclcpp std_msgs nav_msgs sensor_msgs geometry_msgs tf2 tf2_ros tf2_geometry_msgs custom_interfaces)
+
+add_executable(pre_approach_v2_node src/pre_approach_v2.cpp)
+ament_target_dependencies(pre_approach_v2_node rclcpp std_msgs nav_msgs sensor_msgs geometry_msgs tf2 tf2_ros tf2_geometry_msgs custom_interfaces)
 
 install(TARGETS
    pre_approach_node
+   pre_approach_v2_node
    DESTINATION lib/${PROJECT_NAME}
  )
 
 # Install launch files.
 install(DIRECTORY
+  config
   launch
   DESTINATION share/${PROJECT_NAME}/
 )
